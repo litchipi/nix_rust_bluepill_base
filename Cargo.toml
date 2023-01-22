@@ -1,0 +1,19 @@
+[package]
+name = "bluepill_example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+embedded-hal = "0.2.7"
+nb = "1.0.0"
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.2"
+panic-halt = "0.2.0"
+stm32f1 = "0.15.1"
+stm32f1xx-hal = { version = "0.10.0", features = ["rt", "stm32f103", "medium"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"     # optimize for size
+strip = true
