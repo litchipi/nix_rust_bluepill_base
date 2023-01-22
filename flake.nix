@@ -2,7 +2,7 @@
   description = "Synthesizer for the STMF103RB";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/22.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
@@ -73,9 +73,22 @@
       ${toolchain}-objcopy -O binary \
         ./build/${target.triple}/release/${bin_name} \
         ./build/${bin_name}.bin
-    '';
 
-    openocd_cmd = "program ./build/${bin_name}.bin verify reset exit";
+      ${toolchain}-objcopy -O elf32-littlearm \
+        ./build/${target.triple}/release/${bin_name} \
+        ./build/${bin_name}.elf
+    '';
+    flash_script = ''
+      # sudo ${pkgs.stlink}/bin/st-flash write ./build/${bin_name}.bin ${target.flash.start}
+      set -x
+      sudo ${pkgs.openocd}/bin/openocd -f ./openocd.cfg -c "${openocd_cmd}"
+    '';
+    openocd_cmd = builtins.concatStringsSep " " [
+      "reset"
+      "halt"
+      "flash write_image erase ./build/${bin_name}.elf"
+      "reset"
+    ];
   in {
     devShells.default = pkgs.mkShell {
       packages = [
@@ -93,8 +106,12 @@
 
     apps = {
       build = script_wdeps "build_bluepill_synth" [] build_script;
-      flash = script_wdeps "flash_bluepill" [ pkgs.openocd ] ''
-        sudo openocd -f ./openocd.cfg -c "${openocd_cmd}"
+      flash = script_wdeps "flash_bluepill" [] flash_script;
+      openocd = script_wdeps "openocd_bluepill" [ pkgs.openocd ] ''
+        sudo openocd -f ./openocd.cfg
+      '';
+      gdb = script_wdeps "gdb_bluepill" [ pkgs.gcc-arm-embedded ] ''
+        arm-none-eabi-gdb -q -x ./openocd.gdb
       '';
     };
   });
