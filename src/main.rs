@@ -1,18 +1,11 @@
-//! Blinks an LED
-//!
-//! This assumes that a LED is connected to pc13 as is the case on the blue pill board.
-//!
-//! Note: Without additional hardware, PC13 should not be used to drive an LED, see page 5.1.2 of
-//! the reference manual for an explanation. This is not an issue on the blue pill.
-
-#![feature(lang_items)]
+#![deny(unsafe_code)]
 #![no_std]
 #![no_main]
 
-#[allow(unused_imports)]
-use panic_halt;
+use panic_halt as _;
 
 use nb::block;
+
 use cortex_m_rt::entry;
 use stm32f1xx_hal::{pac, prelude::*, timer::Timer};
 
@@ -33,20 +26,21 @@ fn main() -> ! {
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
 
     // Acquire the GPIOC peripheral
-    let mut gpioc = dp.GPIOC.split();
+    let mut gpioa = dp.GPIOA.split();
 
     // Configure gpio C pin 13 as a push-pull output. The `crh` register is passed to the function
     // in order to configure the port. For pins 0-7, crl should be passed instead.
-    let mut led = gpioc.pc13.into_push_pull_output(&mut gpioc.crh);
+    let mut led = gpioa.pa5.into_push_pull_output(&mut gpioa.crl);
+
     // Configure the syst timer to trigger an update every second
     let mut timer = Timer::syst(cp.SYST, &clocks).counter_hz();
-    timer.start(1.Hz()).unwrap();
+    timer.start(3.Hz()).unwrap();
 
     // Wait for the timer to trigger an update and change the state of the LED
     loop {
-        block!(timer.wait()).unwrap();
+        // block!(timer.wait()).unwrap();
         led.set_high();
-        block!(timer.wait()).unwrap();
-        led.set_low();
+        // block!(timer.wait()).unwrap();
+        // led.set_low();
     }
 }

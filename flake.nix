@@ -2,7 +2,7 @@
   description = "Synthesizer for the STMF103RB";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-22.11";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
@@ -19,9 +19,9 @@
 
     target = {
       triple = "thumbv7m-none-eabi";
-      flash = {
+      rom = {
         start = "0x08000000";
-        length = "64K";
+        length = "128K";
       };
       ram = {
         start = "0x20000000";
@@ -41,58 +41,77 @@
       };
     in { type = "app"; program = "${exec}/bin/${name}"; };
 
-    memory_script = ''
+    cortex_m_ld = let
+      src = pkgs.fetchFromGitHub {
+        owner = "libopencm3";
+        repo = "libopencm3";
+        rev = "master";
+        sha256 = "sha256-UeLdfSRyzeKuJLEa+vGeSsSscrOBd/cNPLglEXMG5dM";
+      };
+    in "${src}/lib/cortex-m-generic.ld";
+
+    linker_script = pkgs.writeText "stm32f103.x" ''
       MEMORY
       {
-        /* NOTE 1 K = 1 KiBi = 1024 bytes */
-        FLASH : ORIGIN = ${target.flash.start}, LENGTH = ${target.flash.length}
-        RAM : ORIGIN = ${target.ram.start}, LENGTH = ${target.ram.length}
+	rom (rx) : ORIGIN = ${target.rom.start}, LENGTH = ${target.rom.length}
+	ram (rwx) : ORIGIN = ${target.ram.start}, LENGTH = ${target.ram.length}
       }
+      ${builtins.readFile cortex_m_ld}
     '';
 
     bin_name = (lib.trivial.importTOML ./Cargo.toml).package.name;
+    cc = pkgs.gcc-arm-embedded;
+    toolchain = "${cc}/bin/arm-none-eabi";
+
     build_script = let
       triple_env_var = builtins.replaceStrings ["-"] ["_"] (lib.strings.toUpper target.triple);
-      rustflags = builtins.concatStringsSep " " [
-        "-C target-feature=+crt-static"
-        "-C link-arg=-Tlink.x"
+      linker_flags = [
+        "-T${linker_script}"
       ];
-      toolchain = "${pkgs.gcc-arm-embedded}/bin/arm-none-eabi";
+      rustflags = builtins.concatStringsSep " " ([
+        "-C target-feature=+crt-static"
+      ] ++ (builtins.map (arg: "-C link-arg=${arg}") linker_flags));
     in ''
       mkdir -p ./build
       export CARGO_BUILD_TARGET="${target.triple}"
       export CARGO_TARGET_${triple_env_var}_LINKER=${toolchain}-ld
       export CARGO_TARGET_DIR=./build
-
-      cat << EOF > memory.x
-      ${memory_script}
-      EOF
+      export RUSTFLAGS="${rustflags}"
 
       cargo build --release
+      cp ./build/${target.triple}/release/${bin_name} ./build/${bin_name}.elf
+    '';
+
+    flash_script = ''
+      rm -f ./build/${bin_name}*
 
       ${toolchain}-objcopy -O binary \
         ./build/${target.triple}/release/${bin_name} \
         ./build/${bin_name}.bin
 
-      ${toolchain}-objcopy -O elf32-littlearm \
-        ./build/${target.triple}/release/${bin_name} \
-        ./build/${bin_name}.elf
+      file ./build/${bin_name}.bin
+      exit 1
+
+      sudo ${pkgs.stlink}/bin/st-flash write ./build/${bin_name}.bin 0x8000000
+      echo "OK"
     '';
-    flash_script = ''
-      # sudo ${pkgs.stlink}/bin/st-flash write ./build/${bin_name}.bin ${target.flash.start}
-      set -x
-      sudo ${pkgs.openocd}/bin/openocd -f ./openocd.cfg -c "${openocd_cmd}"
-    '';
-    openocd_cmd = builtins.concatStringsSep " " [
+
+    openocd_cmd = builtins.concatStringsSep "; " [
+      "init"
+      "reset halt"
+      "flash probe 0"
+      "stm32f1x unlock 0"
+      "program ./build/${target.triple}/release/${bin_name}"
+      # "program ./build/${bin_name}.bin"
       "reset"
-      "halt"
-      "flash write_image erase ./build/${bin_name}.elf"
-      "reset"
+      "exit"
     ];
   in {
     devShells.default = pkgs.mkShell {
       packages = [
         rustpkg
+        pkgs.openocd
+        cc
       ];
       shellHook = ''
         build() {
@@ -105,12 +124,12 @@
     };
 
     apps = {
-      build = script_wdeps "build_bluepill_synth" [] build_script;
+      build = script_wdeps "build_bluepill" [] build_script;
       flash = script_wdeps "flash_bluepill" [] flash_script;
       openocd = script_wdeps "openocd_bluepill" [ pkgs.openocd ] ''
         sudo openocd -f ./openocd.cfg
       '';
-      gdb = script_wdeps "gdb_bluepill" [ pkgs.gcc-arm-embedded ] ''
+      gdb = script_wdeps "gdb_bluepill" [ cc ] ''
         arm-none-eabi-gdb -q -x ./openocd.gdb
       '';
     };
