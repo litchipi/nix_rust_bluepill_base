@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 #![no_std]
 #![no_main]
 
@@ -38,9 +37,9 @@ fn main() -> ! {
 
     // Wait for the timer to trigger an update and change the state of the LED
     loop {
-        // block!(timer.wait()).unwrap();
+        block!(timer.wait()).unwrap();
         led.set_high();
-        // block!(timer.wait()).unwrap();
-        // led.set_low();
+        block!(timer.wait()).unwrap();
+        led.set_low();
     }
 }
