@@ -25,15 +25,17 @@ fn main() -> ! {
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
 
     // Acquire the GPIOC peripheral
-    let mut gpioa = dp.GPIOA.split();
+    // let mut gpioa = dp.GPIOA.split();
+    let mut gpioc = dp.GPIOC.split();
 
     // Configure gpio C pin 13 as a push-pull output. The `crh` register is passed to the function
     // in order to configure the port. For pins 0-7, crl should be passed instead.
-    let mut led = gpioa.pa5.into_push_pull_output(&mut gpioa.crl);
+    // let mut led = gpioa.pa5.into_push_pull_output(&mut gpioa.crl);
+    let mut led = gpioc.pc13.into_push_pull_output(&mut gpioc.crh);
 
     // Configure the syst timer to trigger an update every second
     let mut timer = Timer::syst(cp.SYST, &clocks).counter_hz();
-    timer.start(3.Hz()).unwrap();
+    timer.start(2.Hz()).unwrap();
 
     // Wait for the timer to trigger an update and change the state of the LED
     loop {
